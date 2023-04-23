@@ -120,7 +120,7 @@ impl IpnsEntry {
 
         // use V2Signer to create a signer with pubKey and verify signature
         let valid_sig =
-            ed25519::PublicKey::decode(&pub_key)?.verify(&bytes_for_signing, signature_v2);
+            ed25519::PublicKey::try_from_bytes(&pub_key)?.verify(&bytes_for_signing, signature_v2);
 
         Ok(valid_sig)
     }

@@ -1,0 +1,54 @@
+[package]
+name = "ipns-entry"
+version = "0.1.0"
+edition = "2021"
+authors = ["Doug Anderson <douganderson444@gmail.com>"]
+description = "IPNS entry, create IPNS Records for IPNS Entries"
+repository = ""
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["ipns", "ipfs", "libp2p", "rust"]
+categories = ["network-programming::p2p", "network-programming::ipfs"]
+documentation = "https://docs.rs/ipns-entry"
+homepage = ""
+
+[lib]
+crate-type = ["rlib"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+quick-protobuf = "0.8.0"
+serde_derive = { version = "1.0.160", default-features = false }
+serde = { version = "1.0.14", default-features = false, features = ["alloc"] }
+serde_bytes = { version = "0.11.9", default-features = false, features = [
+    "alloc",
+] }
+chrono = "0.4.24"
+hex = "0.4.3"
+cbor4ii = { version = "0.3.1", features = ["serde1"] }
+prost = "0.11"
+bytes = "1.4.0"
+anyhow = "1.0.51"
+
+[dependencies.libp2p-identity]
+# version = "0.1.2"
+path = "../../rust-libp2p/identity"
+features = [
+    "ed25519",
+    "peerid",
+] # possibly "peerid" for multihash, multiaddr, bs58, rand
+
+[build-dependencies]
+prost-build = "0.5"
+
+[package.metadata.docs.rs]
+cargo-args = [
+    "-Zunstable-options",
+    "-Zrustdoc-scrape-examples=examples",
+] # Scrape from examples into docs, https://doc.rust-lang.org/rustdoc/scraped-examples.html
+
+# patch libp2p-identity to use ../rust-libp2p local folder instead
+# of the published version on crates.io
+# [patch.crates-io]
+# libp2p-identity = { path = "../../rust-libp2p/identity", version = "0.1.2" }

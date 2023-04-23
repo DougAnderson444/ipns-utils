@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn test_signers() {
         let keypair = Keypair::generate_ed25519()
-            .into_ed25519()
+            .try_into_ed25519()
             .expect("A ed25519 keypair");
 
         let value = "QmWEekX7EZLUd9VXRNMRXW3LXe4F6x7mB8oPxY5XLptrBq";

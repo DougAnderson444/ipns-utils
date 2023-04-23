@@ -1,4 +1,6 @@
-mod tests {
+mod auto_traits;
+
+mod integration {
     use ipns_entry::cbor;
     use ipns_entry::entry::{IpnsEntry, ValidityType};
     use ipns_entry::signer::{V1Signer, V2Signer};
@@ -9,7 +11,7 @@ mod tests {
     #[test]
     fn test_create_entry_pb_bytes() {
         let keypair = Keypair::generate_ed25519()
-            .into_ed25519()
+            .try_into_ed25519()
             .expect("A ed25519 keypair");
 
         let value = "QmWEekX7EZLUd9VXRNMRXW3LXe4F6x7mB8oPxY5XLptrBq";
@@ -49,7 +51,7 @@ mod tests {
             sequence: Some(0),
             data: Some(data.clone()),
             ttl: Some(ttl),
-            pub_key: Some(keypair.public().encode().to_vec()),
+            pub_key: Some(keypair.public().to_bytes().to_vec()),
         };
 
         let bytes = entry.to_bytes();
@@ -121,7 +123,7 @@ mod tests {
     fn test_fails_on_bad_signature() {
         //make signature_v2 bogus, verify should fail
         let keypair = Keypair::generate_ed25519()
-            .into_ed25519()
+            .try_into_ed25519()
             .expect("A ed25519 keypair");
 
         let value = "QmWEekX7EZLUd9VXRNMRXW3LXe4F6x7mB8oPxY5XLptrBq";
@@ -157,13 +159,11 @@ mod tests {
             sequence: Some(0),
             data: Some(data),
             ttl: Some(ttl),
-            pub_key: Some(keypair.public().encode().to_vec()),
+            pub_key: Some(keypair.public().to_bytes().to_vec()),
         };
 
-        #[allow(deprecated)] // see: https://github.com/libp2p/rust-libp2p/issues/3802
-        let pub_key = ed25519::PublicKey::decode(entry.pub_key.as_ref().unwrap())
-            .map(PublicKey::Ed25519)
-            .unwrap();
+        let ed_key = ed25519::PublicKey::try_from_bytes(entry.pub_key.as_ref().unwrap()).unwrap();
+        let pub_key: PublicKey = PublicKey::from(ed_key);
 
         // PeerId will create the multihash for us, to_byte returns the binary representation of that multihash
         let binary_peer_id = PeerId::from_public_key(&pub_key).to_bytes();
