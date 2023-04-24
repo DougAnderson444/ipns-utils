@@ -6,6 +6,45 @@ pub fn generate() -> Keypair {
     Keypair::generate_ed25519()
 }
 
+pub struct Signables {
+    pub v1: Vec<u8>,
+    pub v2: Vec<u8>,
+}
+
+pub struct Signed {
+    pub v1: Vec<u8>,
+    pub v2: Vec<u8>,
+}
+
+pub struct Signer {
+    keypair: Keypair,
+}
+
+impl Default for Signer {
+    fn default() -> Self {
+        Self {
+            keypair: generate(),
+        }
+    }
+}
+
+impl Signer {
+    pub fn new(keypair: Keypair) -> Self {
+        Self { keypair }
+    }
+
+    pub fn sign(&self, signables: Signables) -> Result<Signed, SigningError> {
+        let v1 = self.keypair.sign(&signables.v1)?;
+        let v2 = self.keypair.sign(&signables.v2)?;
+
+        Ok(Signed { v1, v2 })
+    }
+
+    pub fn public(&self) -> PublicKey {
+        self.keypair.public()
+    }
+}
+
 /// Used to sign bytes created by `cbor::InputData{}.to_bytes()`
 pub struct V2Signer {
     keypair: ed25519::Keypair,

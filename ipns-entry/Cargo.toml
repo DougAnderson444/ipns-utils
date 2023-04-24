@@ -24,16 +24,17 @@ serde = { version = "1.0.14", default-features = false, features = ["alloc"] }
 serde_bytes = { version = "0.11.9", default-features = false, features = [
     "alloc",
 ] }
-chrono = "0.4.24"
+humantime = "2.1.0"
 hex = "0.4.3"
 cbor4ii = { version = "0.3.1", features = ["serde1"] }
 prost = "0.11"
 bytes = "1.4.0"
 anyhow = "1.0.51"
+multihash = "0.18.1"
 
 [dependencies.libp2p-identity]
 # version = "0.1.2"
-path = "../../rust-libp2p/identity"
+git = "https://github.com/libp2p/rust-libp2p.git"
 features = [
     "ed25519",
     "peerid",
@@ -47,8 +48,3 @@ cargo-args = [
     "-Zunstable-options",
     "-Zrustdoc-scrape-examples=examples",
 ] # Scrape from examples into docs, https://doc.rust-lang.org/rustdoc/scraped-examples.html
-
-# patch libp2p-identity to use ../rust-libp2p local folder instead
-# of the published version on crates.io
-# [patch.crates-io]
-# libp2p-identity = { path = "../../rust-libp2p/identity", version = "0.1.2" }

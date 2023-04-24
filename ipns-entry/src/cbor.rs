@@ -71,6 +71,7 @@ struct CborData<'a> {
 ///
 /// // ...sign the data
 /// ```
+#[derive(Debug, PartialEq, Clone)]
 pub struct Data {
     pub value: Vec<u8>,
     pub validity: Vec<u8>,

@@ -4,15 +4,12 @@ mod integration {
     use ipns_entry::cbor;
     use ipns_entry::entry::{IpnsEntry, ValidityType};
     use ipns_entry::signer::{V1Signer, V2Signer};
-    use libp2p_identity::ed25519;
     use libp2p_identity::Keypair;
     use libp2p_identity::PeerId;
-    use libp2p_identity::PublicKey;
     #[test]
     fn test_create_entry_pb_bytes() {
-        let keypair = Keypair::generate_ed25519()
-            .try_into_ed25519()
-            .expect("A ed25519 keypair");
+        let keypair = Keypair::generate_ed25519();
+        let ed_keys = &keypair.clone().try_into_ed25519().expect("Valid keypair");
 
         let value = "QmWEekX7EZLUd9VXRNMRXW3LXe4F6x7mB8oPxY5XLptrBq";
         let validity = "2033-05-18T03:33:20.000000000Z";
@@ -28,14 +25,14 @@ mod integration {
         }
         .to_bytes();
 
-        let v2_signer = V2Signer::new(&keypair);
+        let v2_signer = V2Signer::new(&ed_keys.clone());
         let sig_v2 = v2_signer.sign(&data);
 
         // verify keypair ops
         assert!(v2_signer.verify(&data, &sig_v2));
 
         let sig_v1 = (V1Signer {
-            keypair: keypair.clone(),
+            keypair: ed_keys.clone(),
             validity: validity.as_bytes(),
             value: value.as_bytes(),
             validity_type: 0,
@@ -51,7 +48,7 @@ mod integration {
             sequence: Some(0),
             data: Some(data.clone()),
             ttl: Some(ttl),
-            pub_key: Some(keypair.public().to_bytes().to_vec()),
+            pub_key: None,
         };
 
         let bytes = entry.to_bytes();
@@ -69,20 +66,13 @@ mod integration {
         assert_eq!(entry.sequence, Some(0));
         assert_eq!(entry.data, Some(data));
         assert_eq!(entry.ttl, Some(ttl));
-        assert_eq!(entry.pub_key, Some(keypair.public().to_bytes().to_vec()));
-
-        // convert public key to binary_id
-        // BINARY_ID is the binary representation of IPNS Name
-        // IPNS Name is a Multihash of a serialized PublicKey
-        // a Multihash of a serialized PublicKey is the same as the PeerId?
-        let ed_key = ed25519::PublicKey::try_from_bytes(entry.pub_key.as_ref().unwrap()).unwrap();
-        let pub_key: PublicKey = PublicKey::from(ed_key);
+        assert_eq!(entry.pub_key, None);
 
         // PeerId will create the multihash for us, to_byte returns the binary representation of that multihash
-        let binary_peer_id = PeerId::from_public_key(&pub_key).to_bytes();
+        let peer_id = PeerId::from_public_key(&keypair.public());
 
         // assert is_valid
-        assert!(entry.is_valid_for(binary_peer_id).is_ok());
+        assert!(entry.is_valid_for(&peer_id).is_ok());
     }
 
     #[test]
@@ -122,9 +112,8 @@ mod integration {
     #[test]
     fn test_fails_on_bad_signature() {
         //make signature_v2 bogus, verify should fail
-        let keypair = Keypair::generate_ed25519()
-            .try_into_ed25519()
-            .expect("A ed25519 keypair");
+        let keypair = Keypair::generate_ed25519();
+        let ed_keys = &keypair.clone().try_into_ed25519().expect("Valid keypair");
 
         let value = "QmWEekX7EZLUd9VXRNMRXW3LXe4F6x7mB8oPxY5XLptrBq";
         let validity = "2033-05-18T03:33:20.000000000Z";
@@ -143,7 +132,7 @@ mod integration {
         let sig_v2 = hex::decode("deadbeef").unwrap();
 
         let sig_v1 = (V1Signer {
-            keypair: keypair.clone(),
+            keypair: ed_keys.clone(),
             validity: validity.as_bytes(),
             value: value.as_bytes(),
             validity_type: 0,
@@ -159,15 +148,12 @@ mod integration {
             sequence: Some(0),
             data: Some(data),
             ttl: Some(ttl),
-            pub_key: Some(keypair.public().to_bytes().to_vec()),
+            pub_key: None,
         };
 
-        let ed_key = ed25519::PublicKey::try_from_bytes(entry.pub_key.as_ref().unwrap()).unwrap();
-        let pub_key: PublicKey = PublicKey::from(ed_key);
-
         // PeerId will create the multihash for us, to_byte returns the binary representation of that multihash
-        let binary_peer_id = PeerId::from_public_key(&pub_key).to_bytes();
+        let peer_id = PeerId::from_public_key(&keypair.public());
 
-        assert!(!entry.is_valid_for(binary_peer_id).expect("an answer"));
+        assert!(!entry.is_valid_for(&peer_id).expect("an answer"));
     }
 }
