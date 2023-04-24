@@ -4,9 +4,9 @@
 
 -   `ipns-entry`: The crate for encoding and decoding IPNS records. Encode IPNS Record data into signed CBOR and Protobuf bytes. Decode and verify protobuf IPNS records in Rust. Built in accordance with the [IPNS spec](https://specs.ipfs.tech/ipns/ipns-record/).
 
-- `ipns-interop-test`: [TODO] A crate for testing IPNS interop with Go and JS. This crate is used in the [interop test](todo!).
+-   `ipns-interop-test`: [TODO] A crate for testing IPNS interop with Go and JS. This crate is used in the [interop test](todo!).
 
-- `ipns-publish-persist`: [TODO] A crate for ongoing publishing and persisting IPNS records to a datastore.
+-   `ipns-publish-persist`: [TODO] A crate for ongoing publishing and persisting IPNS records to a datastore.
 
 # Usage
 
