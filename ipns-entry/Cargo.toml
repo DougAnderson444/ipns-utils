@@ -33,12 +33,7 @@ anyhow = "1.0.51"
 multihash = "0.18.1"
 
 [dependencies.libp2p-identity]
-# version = "0.1.2"
-git = "https://github.com/libp2p/rust-libp2p.git"
-features = [
-    "ed25519",
-    "peerid",
-] # possibly "peerid" for multihash, multiaddr, bs58, rand
+workspace = true
 
 [build-dependencies]
 prost-build = "0.5"
