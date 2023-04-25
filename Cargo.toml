@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [".", "ipns-entry"]
+members = [".", "ipns-entry", "ipns-interop-test", "ipns-server"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,6 +16,14 @@ documentation = "https://docs.rs/ipns-utils"
 [workspace.dependencies]
 ipns-entry = { path = "ipns-entry" }
 
+[workspace.dependencies.libp2p-identity]
+# version = "0.1.2"
+git = "https://github.com/libp2p/rust-libp2p.git"
+features = [
+    "ed25519",
+    "peerid",
+] # possibly "peerid" for multihash, multiaddr, bs58, rand
+
 # So the sub-crates can be re-exported under ipns-utils
 [dependencies]
 ipns-entry = { workspace = true }
@@ -23,3 +31,6 @@ ipns-entry = { workspace = true }
 [dev-dependencies]
 humantime = "2.1.0"
 ipns-entry = { workspace = true } # So it's available in ./examples/
+
+[patch.crates-io]
+libp2p = { git = "https://github.com/p-shahi/rust-libp2p.git", branch = "master-plus-webrtc-code" }
