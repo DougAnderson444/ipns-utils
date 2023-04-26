@@ -1,0 +1,1 @@
+window.ALL_CRATES = ["ipns_entry","ipns_interop_test","ipns_server","ipns_utils"];

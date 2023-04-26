@@ -1,0 +1,3 @@
+(function() {var implementors = {
+"ipns_entry":[["impl <a class=\"trait\" href=\"https://docs.rs/prost/0.11.9/prost/message/trait.Message.html\" title=\"trait prost::message::Message\">Message</a> for <a class=\"struct\" href=\"ipns_entry/entry/protobuf/struct.IpnsEntry.html\" title=\"struct ipns_entry::entry::protobuf::IpnsEntry\">IpnsEntry</a>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

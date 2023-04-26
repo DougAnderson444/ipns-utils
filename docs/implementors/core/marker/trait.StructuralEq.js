@@ -1,0 +1,3 @@
+(function() {var implementors = {
+"ipns_entry":[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.67.0/core/marker/trait.StructuralEq.html\" title=\"trait core::marker::StructuralEq\">StructuralEq</a> for <a class=\"enum\" href=\"ipns_entry/entry/protobuf/ipns_entry/enum.ValidityType.html\" title=\"enum ipns_entry::entry::protobuf::ipns_entry::ValidityType\">ValidityType</a>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

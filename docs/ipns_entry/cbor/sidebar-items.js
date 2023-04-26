@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":[["Data","Struct to hold the data to create the CBOR bytes."]]};

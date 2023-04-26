@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":[["check_go_ipfs","fn to check whether go-ipfs is installed or not"]]};
