@@ -64,9 +64,9 @@ pub async fn create(local_keypair: identity::Keypair) -> Result<Boxed<(PeerId, S
     };
 
     Ok(transport
-        .map(|either_output, _| match either_output {
+        .map(|webrtc_or_others, _| match webrtc_or_others {
             Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
-            Either::Right(either_quic_or_tcp) => match either_quic_or_tcp {
+            Either::Right(quic_or_tcp) => match quic_or_tcp {
                 Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
                 Either::Right((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
             },
