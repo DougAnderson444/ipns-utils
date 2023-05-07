@@ -15,6 +15,7 @@ documentation = "https://docs.rs/ipns-utils"
 # Dependencies inherited from the workspace
 [workspace.dependencies]
 ipns-entry = { path = "ipns-entry" }
+ipns-server = { path = "ipns-server" }
 
 [workspace.dependencies.libp2p-identity]
 # version = "0.1.2"
@@ -27,6 +28,7 @@ features = [
 # So the sub-crates can be re-exported under ipns-utils
 [dependencies]
 ipns-entry = { workspace = true }
+ipns-server = { workspace = true }
 
 [dev-dependencies]
 humantime = "2.1.0"
