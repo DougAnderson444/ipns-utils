@@ -7,9 +7,9 @@ async fn main() -> Result<()> {
         // let _result = ipns_server::start().await.unwrap();
         let _ = Server::new()
             .enable_kademlia()
-            .enable_autonat()
             .start_with_tokio_executor()
             .await;
+        // let _ = ipns_server::start_with_tokio_executor().await;
     });
 
     println!("\n*** To Shutdown, use Ctrl + C ***\n");
