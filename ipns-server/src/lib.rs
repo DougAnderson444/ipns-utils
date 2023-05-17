@@ -1,12 +1,14 @@
 use crate::config::{KADEMLIA_PROTOCOL_NAME, LOCAL_KEY_PATH};
 
 use anyhow::Result;
+use bytes::Bytes;
 use libp2p::multiaddr::{Multiaddr, Protocol};
 use log::warn;
 use std::error::Error;
 use std::net::Ipv6Addr;
 use std::path::Path;
 use std::path::PathBuf;
+use tokio::sync::{mpsc, oneshot};
 
 pub mod behaviour;
 pub mod config;
@@ -18,6 +20,17 @@ mod metric_server;
 const PORT_WEBRTC: u16 = 9090;
 const PORT_QUIC: u16 = 9091;
 const PORT_TCP: u16 = 9092;
+
+type Responder<T> = oneshot::Sender<T>;
+
+#[derive(Debug, Clone)]
+pub struct ServerResponse {
+    pub address: Bytes,
+}
+
+pub struct Message<T> {
+    pub reply: Responder<T>,
+}
 
 #[derive(Debug, Default)]
 pub struct Server {
@@ -80,7 +93,10 @@ impl Server {
     }
 
     /// An example WebRTC peer that will accept connections
-    pub async fn start_with_tokio_executor(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn start_with_tokio_executor(
+        &mut self,
+        mut request_recvr: mpsc::Receiver<Message<ServerResponse>>,
+    ) -> Result<(), Box<dyn Error>> {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
         if self.config.is_none() {
@@ -115,7 +131,26 @@ impl Server {
             network::new(transport, behaviour, local_keypair.public().into()).await?;
 
         // Spawn the network task for it to run in the background.
-        let handle = tokio::spawn(async move { network_event_loop.run().await });
+        let network_handle = tokio::spawn(async move { network_event_loop.run().await });
+
+        // Handle any network events
+        tokio::spawn(async move {
+            loop {
+                match network_events.recv().await {
+                    Some(network::NetworkEvent::NewListenAddr { address }) => {
+                        // padd message up to main
+                        if let Some(message) = request_recvr.recv().await {
+                            let _ = message.reply.send(ServerResponse {
+                                address: Bytes::from(address.to_string()),
+                            });
+                        }
+                    }
+                    evt => {
+                        eprintln!("Network event: {:?}", evt);
+                    }
+                }
+            }
+        });
 
         let address_webrtc = Multiaddr::from(Ipv6Addr::UNSPECIFIED)
             .with(Protocol::Udp(PORT_WEBRTC))
@@ -134,7 +169,7 @@ impl Server {
                 .expect("Listening not to fail.");
         }
 
-        handle.await?;
+        network_handle.await?;
         println!("EOF");
 
         Ok(())

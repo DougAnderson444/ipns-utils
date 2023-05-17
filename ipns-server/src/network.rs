@@ -27,11 +27,11 @@ pub async fn new(
     transport: Boxed<(PeerId, StreamMuxerBox)>,
     behaviour: Behaviour,
     peer_id: PeerId,
-) -> Result<(Client, Receiver<ComposedEvent>, EventLoop), Box<dyn Error>> {
+) -> Result<(Client, Receiver<NetworkEvent>, EventLoop), Box<dyn Error>> {
     let swarm = SwarmBuilder::with_tokio_executor(transport, behaviour, peer_id).build();
 
-    let (command_sender, command_receiver) = mpsc::channel(1);
-    let (event_sender, event_receiver) = mpsc::channel(1);
+    let (command_sender, command_receiver) = mpsc::channel(8);
+    let (event_sender, event_receiver) = mpsc::channel(8);
 
     Ok((
         Client {
@@ -67,19 +67,24 @@ enum Command {
     },
 }
 
+#[derive(Debug)]
+pub enum NetworkEvent {
+    NewListenAddr { address: Multiaddr },
+}
+
 pub struct EventLoop {
     tick: futures_timer::Delay,
     now: Instant,
     swarm: Swarm<Behaviour>,
     command_receiver: mpsc::Receiver<Command>,
-    event_sender: mpsc::Sender<ComposedEvent>,
+    event_sender: mpsc::Sender<NetworkEvent>,
 }
 
 impl EventLoop {
     fn new(
         swarm: Swarm<Behaviour>,
         command_receiver: mpsc::Receiver<Command>,
-        event_sender: mpsc::Sender<ComposedEvent>,
+        event_sender: mpsc::Sender<NetworkEvent>,
     ) -> Self {
         Self {
             tick: futures_timer::Delay::new(TICK_INTERVAL),
@@ -146,21 +151,33 @@ impl EventLoop {
     async fn handle_event(&mut self, event: SwarmEvent<ComposedEvent, types::ComposedErr>) {
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
-                // closure shortcut to sift through address response
-                let mut add_addr = |address: Multiaddr| {
-                    let p2p_address =
-                        address.with(Protocol::P2p((*self.swarm.local_peer_id()).into()));
-                    info!("Listen p2p address: {p2p_address:?}");
+                let mut addr_handler = || {
+                    let p2p_addr = address
+                        .clone()
+                        .with(Protocol::P2p((*self.swarm.local_peer_id()).into()));
+
+                    info!("Listen p2p address: {p2p_addr:?}");
                     self.swarm
-                        .add_external_address(p2p_address, AddressScore::Infinite);
+                        .add_external_address(p2p_addr.clone(), AddressScore::Infinite);
+
+                    // pass the address back to the other task, for display, etc.
+                    self.event_sender
+                        .send(NetworkEvent::NewListenAddr { address: p2p_addr })
                 };
-                // Only add globally available IPv6 addresses to the external addresses list.
-                if let Protocol::Ip6(ip6) = address.iter().next().unwrap() {
-                    if !ip6.is_loopback() && !ip6.is_unspecified() {
-                        add_addr(address.clone());
+                // Protocol::Ip is the first item in the address vector
+                match address.iter().next().unwrap() {
+                    Protocol::Ip6(ip6) => {
+                        // Only add our globally available IPv6 addresses to the external addresses list.
+                        if !ip6.is_loopback() && !ip6.is_unspecified() {
+                            addr_handler().await.expect("Receiver not to be dropped.");
+                        }
                     }
-                } else {
-                    add_addr(address.clone());
+                    Protocol::Ip4(ip4) => {
+                        if !ip4.is_loopback() && !ip4.is_unspecified() {
+                            addr_handler().await.expect("Receiver not to be dropped.");
+                        }
+                    }
+                    _ => {}
                 }
             }
             SwarmEvent::ConnectionEstablished {
