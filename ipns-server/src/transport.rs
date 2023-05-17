@@ -12,20 +12,20 @@ use libp2p::Transport;
 use libp2p_quic as quic;
 use libp2p_webrtc as webrtc;
 use libp2p_webrtc::tokio::Certificate;
-use log::{info, warn};
+use log::info;
 use std::io;
 use std::path::Path;
 use std::time::Duration;
 use tokio::fs;
 
 const LOCAL_CERT_PATH: &str = "./cert.pem";
-// Create the runtime
 
+/// Create a new Transport that supports WebRTC, QUIC, and TCP.
 pub async fn create(local_keypair: identity::Keypair) -> Result<Boxed<(PeerId, StreamMuxerBox)>> {
     let authentication_config = {
         let noise_keypair_spec = noise::Keypair::<noise::X25519Spec>::new()
             .into_authentic(&local_keypair)
-            .unwrap();
+            .context("Failed to create noise keypair")?;
 
         noise::NoiseConfig::xx(noise_keypair_spec).into_authenticated()
     };
@@ -50,26 +50,24 @@ pub async fn create(local_keypair: identity::Keypair) -> Result<Boxed<(PeerId, S
 
     let webrtc_cert = read_or_create_certificate(Path::new(LOCAL_CERT_PATH))
         .await
-        .context("Failed to read certificate");
+        .context("Failed to read certificate")?;
 
-    let certificate = webrtc_cert.expect("a valid cert");
-
-    let webrtc = webrtc::tokio::Transport::new(local_keypair.clone(), certificate);
+    let webrtc = webrtc::tokio::Transport::new(local_keypair.clone(), webrtc_cert);
 
     let transport = {
         let dns_quic_or_tcp = dns::TokioDnsConfig::system(
             libp2p::core::transport::OrTransport::new(quic_transport, tcp_transport),
         )?;
-        webrtc.or_transport(dns_quic_or_tcp)
+        dns_quic_or_tcp.or_transport(webrtc)
     };
 
     Ok(transport
-        .map(|webrtc_or_others, _| match webrtc_or_others {
-            Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
-            Either::Right(quic_or_tcp) => match quic_or_tcp {
+        .map(|dns_or_webrtc, _| match dns_or_webrtc {
+            Either::Left(quic_or_tcp) => match quic_or_tcp {
                 Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
                 Either::Right((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
             },
+            Either::Right((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
         })
         .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
         .boxed())
@@ -77,12 +75,11 @@ pub async fn create(local_keypair: identity::Keypair) -> Result<Boxed<(PeerId, S
 
 async fn read_or_create_certificate(path: &Path) -> Result<Certificate> {
     if path.exists() {
-        if let Ok(pem) = fs::read_to_string(&path).await {
-            info!("Using existing certificate from {}", path.display());
-            return Ok(Certificate::from_pem(&pem)?);
-        } else {
-            warn!("Failed to read certificate from {}", path.display());
-        }
+        let pem = fs::read_to_string(&path).await?;
+
+        info!("Using existing certificate from {}", path.display());
+
+        return Ok(Certificate::from_pem(&pem)?);
     }
 
     let cert = Certificate::generate(&mut rand::thread_rng())?;
