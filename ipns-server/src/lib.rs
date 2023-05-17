@@ -1,34 +1,25 @@
+use crate::config::{KADEMLIA_PROTOCOL_NAME, LOCAL_KEY_PATH};
+
 use anyhow::Result;
-use futures::stream::StreamExt;
-use futures_timer::Delay;
-use libp2p::identify;
-use libp2p::identity;
-use libp2p::identity::PeerId;
-use libp2p::kad;
-use libp2p::metrics::{Metrics, Recorder};
 use libp2p::multiaddr::{Multiaddr, Protocol};
-use libp2p::swarm::{SwarmBuilder, SwarmEvent};
-use log::{debug, info};
-use prometheus_client::metrics::info::Info;
-use prometheus_client::registry::Registry;
+use log::warn;
 use std::error::Error;
 use std::net::Ipv6Addr;
+use std::path::Path;
 use std::path::PathBuf;
-use std::str::FromStr;
-use std::task::Poll;
-use std::time::Duration;
-use zeroize::Zeroizing;
 
-mod behaviour;
-mod config;
+pub mod behaviour;
+pub mod config;
+pub mod network;
+pub mod transport;
+
 mod metric_server;
-mod transport;
 
-const BOOTSTRAP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const PORT_WEBRTC: u16 = 9090;
 const PORT_QUIC: u16 = 9091;
 const PORT_TCP: u16 = 9092;
 
+#[derive(Debug, Default)]
 pub struct Server {
     /// Path to IPFS config file.
     config: Option<PathBuf>,
@@ -41,12 +32,12 @@ pub struct Server {
 
     /// Whether to run the libp2p Autonat protocol.
     enable_autonat: bool,
-}
 
-impl Default for Server {
-    fn default() -> Self {
-        Self::new()
-    }
+    /// Address to listen on
+    listen_address: Option<String>,
+
+    /// Address of a remote peer to connect to
+    remote_address: Option<Multiaddr>,
 }
 
 impl Server {
@@ -56,7 +47,14 @@ impl Server {
             metrics_path: "/metrics".to_string(),
             enable_kademlia: false,
             enable_autonat: false,
+            listen_address: None,
+            remote_address: None,
         }
+    }
+
+    fn with_config(&mut self, config: PathBuf) -> &mut Server {
+        self.config = Some(config);
+        self
     }
 
     pub fn enable_kademlia(&mut self) -> &mut Server {
@@ -69,40 +67,55 @@ impl Server {
         self
     }
 
-    pub async fn start_with_tokio_executor(&self) -> Result<(), Box<dyn Error>> {
-        env_logger::init();
+    // with listen address
+    pub fn with_listen_address(&mut self, listen_address: String) -> &mut Server {
+        self.listen_address = Some(listen_address);
+        self
+    }
 
-        let (local_peer_id, local_keypair) = match &self.config {
-            Some(path) => {
-                let config = Zeroizing::new(config::Config::from_file(path.as_path())?);
+    // with remote address
+    pub fn with_remote_address(&mut self, remote_address: Multiaddr) -> &mut Server {
+        self.remote_address = Some(remote_address);
+        self
+    }
 
-                let keypair = identity::Keypair::from_protobuf_encoding(&Zeroizing::new(
-                    base64::decode(config.identity.priv_key.as_bytes())?,
-                ))?;
+    /// An example WebRTC peer that will accept connections
+    pub async fn start_with_tokio_executor(&mut self) -> Result<(), Box<dyn Error>> {
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-                let peer_id = keypair.public().into();
-                assert_eq!(
-                    PeerId::from_str(&config.identity.peer_id)?,
-                    peer_id,
-                    "Expect peer id derived from private key and peer id retrieved from config to match."
-                );
-
-                (peer_id, keypair)
+        if self.config.is_none() {
+            // check if local key exists
+            match config::Config::from_file(Path::new(LOCAL_KEY_PATH)) {
+                Ok(_) => {
+                    let _ = &self.with_config(Path::new(LOCAL_KEY_PATH).into());
+                }
+                Err(_) => {
+                    warn!("No saved Local peer available");
+                }
             }
-            None => {
-                let keypair = identity::Keypair::generate_ed25519();
-                (keypair.public().into(), keypair)
-            }
-        };
-        println!("Local peer id: {local_peer_id:?}");
+        }
+
+        let local_keypair = config::Config::load_keypair(&self.config).await?;
 
         let transport = transport::create(local_keypair.clone()).await?;
 
-        let behaviour =
-            behaviour::Behaviour::new(local_keypair, self.enable_kademlia, self.enable_autonat);
+        let mut behaviour_builder = behaviour::BehaviourBuilder::new(local_keypair.clone());
 
-        let mut swarm =
-            SwarmBuilder::with_tokio_executor(transport, behaviour, local_peer_id).build();
+        if self.enable_kademlia {
+            behaviour_builder.with_kademlia(Some(KADEMLIA_PROTOCOL_NAME));
+        };
+
+        let behaviour = behaviour_builder.build();
+
+        // Create networks with behaviours, transports, and PeerId
+        // Each network is isolated by the Kad::protocol_name in the behaviour
+        // TODO: Each network operator can manage the pubsub topics too
+
+        let (mut network_client, mut network_events, network_event_loop) =
+            network::new(transport, behaviour, local_keypair.public().into()).await?;
+
+        // Spawn the network task for it to run in the background.
+        let handle = tokio::spawn(async move { network_event_loop.run().await });
 
         let address_webrtc = Multiaddr::from(Ipv6Addr::UNSPECIFIED)
             .with(Protocol::Udp(PORT_WEBRTC))
@@ -114,110 +127,16 @@ impl Server {
 
         let address_tcp = Multiaddr::from(Ipv6Addr::UNSPECIFIED).with(Protocol::Tcp(PORT_TCP));
 
-        swarm.listen_on(address_webrtc.clone()).expect("listen rtc");
-        swarm.listen_on(address_quic.clone()).expect("listen quic");
-        swarm.listen_on(address_tcp.clone()).expect("listen on tcp");
-
-        let mut metric_registry = Registry::default();
-        let metrics = Metrics::new(&mut metric_registry);
-        let build_info = Info::new(vec![("version".to_string(), env!("CARGO_PKG_VERSION"))]);
-        metric_registry.register(
-            "build",
-            "A metric with a constant '1' value labeled by version",
-            build_info,
-        );
-
-        let p = self.metrics_path.clone();
-        tokio::spawn(async move { metric_server::run(metric_registry, p).await });
-
-        let mut bootstrap_timer = Delay::new(BOOTSTRAP_INTERVAL);
-
-        loop {
-            if let Poll::Ready(()) = futures::poll!(&mut bootstrap_timer) {
-                bootstrap_timer.reset(BOOTSTRAP_INTERVAL);
-                let _ = swarm
-                    .behaviour_mut()
-                    .kademlia
-                    .as_mut()
-                    .map(|k| k.bootstrap());
-
-                let _ = swarm.behaviour_mut().kademlia.as_mut().map(|k| {
-                    k.get_closest_peers(
-                        PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN")
-                            .expect("legit peerid"),
-                    )
-                });
-            }
-
-            match swarm.next().await.expect("Swarm not to terminate.") {
-                SwarmEvent::Behaviour(behaviour::Event::Identify(e)) => {
-                    info!("{:?}", e);
-                    metrics.record(&*e);
-
-                    if let identify::Event::Received {
-                        peer_id,
-                        info:
-                            identify::Info {
-                                listen_addrs,
-                                protocols,
-                                ..
-                            },
-                    } = *e
-                    {
-                        if protocols
-                            .iter()
-                            .any(|p| p.as_bytes() == kad::protocol::DEFAULT_PROTO_NAME)
-                        {
-                            for addr in listen_addrs {
-                                swarm
-                                    .behaviour_mut()
-                                    .kademlia
-                                    .as_mut()
-                                    .map(|k| k.add_address(&peer_id, addr));
-                            }
-                        }
-                    }
-                }
-                SwarmEvent::Behaviour(behaviour::Event::Ping(e)) => {
-                    debug!("{:?}", e);
-                    metrics.record(&e);
-                }
-                SwarmEvent::Behaviour(behaviour::Event::Kademlia(e)) => {
-                    println!("** KAD Evt: {e:?}");
-                    debug!("{:?}", e);
-                    metrics.record(&e);
-                }
-                SwarmEvent::Behaviour(behaviour::Event::Relay(e)) => {
-                    info!("{:?}", e);
-                    metrics.record(&e)
-                }
-                SwarmEvent::Behaviour(behaviour::Event::Autonat(e)) => {
-                    info!("{:?}", e);
-                    // TODO: Add metric recording for `NatStatus`.
-                    // metrics.record(&e)
-                }
-                SwarmEvent::Behaviour(behaviour::Event::Gossipsub(
-                    libp2p::gossipsub::Event::Message { message, .. },
-                )) => {
-                    info!(
-                        "📨 Received message from {:?}: {}",
-                        message.source,
-                        String::from_utf8(message.data).unwrap()
-                    );
-                }
-                SwarmEvent::Behaviour(behaviour::Event::Gossipsub(
-                    libp2p::gossipsub::Event::Subscribed { peer_id, topic },
-                )) => {
-                    info!("💨💨💨  {peer_id} subscribed to {topic}");
-                }
-                e => {
-                    if let SwarmEvent::NewListenAddr { address, .. } = &e {
-                        println!("Listening on {address:?}");
-                    }
-
-                    metrics.record(&e)
-                }
-            }
+        for addr in [address_webrtc, address_quic, address_tcp] {
+            network_client
+                .start_listening(addr)
+                .await
+                .expect("Listening not to fail.");
         }
+
+        handle.await?;
+        println!("EOF");
+
+        Ok(())
     }
 }
