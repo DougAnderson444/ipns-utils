@@ -172,18 +172,33 @@ impl EventLoop {
                 eprintln!("✔️  Connection Established to {peer_id} in {established_in:?} on {send_back_addr}");
                 info!("Connected to {peer_id}");
             }
+
             SwarmEvent::OutgoingConnectionError { peer_id, error } => {
                 warn!("Failed to dial {peer_id:?}: {error}");
+
+                match (peer_id, &error) {
+                    (Some(peer_id), libp2p::swarm::DialError::Transport(details_vector)) => {
+                        for (addr, _error) in details_vector.iter() {
+                            self.swarm
+                                .behaviour_mut()
+                                .kademlia
+                                .as_mut()
+                                .map(|k| k.remove_address(&peer_id, addr));
+                            // peer may have other valid addresses, don't do this:
+                            // self.swarm
+                            //     .behaviour_mut()
+                            //     .gossipsub
+                            //     .remove_explicit_peer(&peer_id);
+                            info!("Removed {addr:?} from the routing table (if it was in there).");
+                        }
+                    }
+                    _ => {
+                        warn!("{error}");
+                    }
+                }
             }
             SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
                 warn!("Connection to {peer_id} closed: {cause:?}");
-                // self.swarm
-                //     .behaviour_mut()
-                //     .kademlia
-                //     .as_mut()
-                //     .map(|k| k.remove_peer(&peer_id));
-
-                // info!("Removed {peer_id} from the routing table (if it was in there).");
             }
             SwarmEvent::Behaviour(ComposedEvent::Relay(e)) => {
                 debug!("{:?}", e);
@@ -320,7 +335,29 @@ impl EventLoop {
                     Ok(_) => sender.send(Ok(())),
                     Err(e) => sender.send(Err(Box::new(e))),
                 };
-            }
+            } // if let Some(listen_address) = &self.listen_address {
+              //     // match on whether the listen address string is an IP address or not (do nothing if not)
+              //     match listen_address.parse::<IpAddr>() {
+              //         Ok(ip) => {
+              //             let opt_address_webrtc = Multiaddr::from(ip)
+              //                 .with(Protocol::Udp(PORT_WEBRTC))
+              //                 .with(Protocol::WebRTCDirect);
+              //             swarm.add_external_address(opt_address_webrtc, AddressScore::Infinite);
+              //         }
+              //         Err(_) => {
+              //             debug!(
+              //                 "listen_address provided is not an IP address: {}",
+              //                 listen_address
+              //             )
+              //         }
+              //     }
+              // }
+
+              // if let Some(remote_address) = &self.remote_address {
+              //     swarm
+              //         .dial(remote_address.clone())
+              //         .expect("a valid remote address to be provided");
+              // }
         }
     }
 }
