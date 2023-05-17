@@ -78,7 +78,7 @@ impl IpnsEntry {
                     let pub_key: PublicKey = PublicKey::from(ed_key);
                     Ok(pub_key)
                 }
-                Err(_) => return Err(anyhow!("Invalid PeerId")),
+                Err(_) => Err(anyhow!("Invalid PeerId")),
             },
         }
     }
@@ -94,7 +94,7 @@ impl IpnsEntry {
         let data: &[u8] = self.data.as_ref().expect("Valid data");
         match cbor::Data::from_bytes(data) {
             Ok(data) => Ok(data),
-            Err(_) => return Err(anyhow!("Invalid DAG-CBOR")),
+            Err(_) => Err(anyhow!("Invalid DAG-CBOR")),
         }
     }
 
