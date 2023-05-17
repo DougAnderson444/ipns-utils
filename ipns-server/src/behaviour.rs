@@ -1,19 +1,22 @@
+use super::config::topic::topic; // TODO: Make a behaviour config module instead of crate wide config
 use libp2p::autonat;
 use libp2p::gossipsub;
 use libp2p::identify;
 use libp2p::identity::Keypair;
+use libp2p::kad;
 use libp2p::kad::{record::store::MemoryStore, Kademlia, KademliaConfig, KademliaEvent};
-use libp2p::ping;
 use libp2p::relay;
 use libp2p::swarm::{behaviour::toggle::Toggle, keep_alive, NetworkBehaviour};
-use libp2p::{identity, Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId};
+use log::debug;
+use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::time::Duration;
 use void::Void;
 
-const BOOTNODES: [&str; 4] = [
+const IPFS_BOOTNODES: [&str; 4] = [
     "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
     "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
     "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
@@ -21,20 +24,85 @@ const BOOTNODES: [&str; 4] = [
 ];
 
 #[derive(NetworkBehaviour)]
-#[behaviour(out_event = "Event", event_process = false)]
+#[behaviour(out_event = "ComposedEvent", prelude = "libp2p::swarm::derive_prelude")]
 pub struct Behaviour {
     pub gossipsub: gossipsub::Behaviour,
-    pub kademlia: Toggle<Kademlia<MemoryStore>>,
-    relay: relay::Behaviour,
-    ping: ping::Behaviour,
     identify: identify::Behaviour,
-    autonat: Toggle<autonat::Behaviour>,
+    pub kademlia: Toggle<Kademlia<MemoryStore>>,
     keep_alive: keep_alive::Behaviour,
+    relay: relay::Behaviour,
+    autonat: Toggle<autonat::Behaviour>,
 }
 
 impl Behaviour {
-    pub fn new(id_keys: Keypair, enable_kademlia: bool, enable_autonat: bool) -> Self {
-        let pub_key: identity::PublicKey = id_keys.public();
+    // This method will help users to discover the builder
+    pub fn builder(id_keys: Keypair) -> BehaviourBuilder {
+        BehaviourBuilder::new(id_keys)
+    }
+}
+
+pub struct BehaviourBuilder {
+    // Probably lots of optional fields.
+    id_keys: Keypair,
+    autonat: Option<autonat::Behaviour>,
+    kademlia: Option<Kademlia<MemoryStore>>,
+}
+
+/// Builder pattern for Behaviour.
+/// Defaults to no autonat and no kademlia.
+impl BehaviourBuilder {
+    // use Builder pattern to build a behaviour
+    pub fn new(id_keys: Keypair) -> Self {
+        Self {
+            id_keys,
+            autonat: None,
+            kademlia: None,
+        }
+    }
+
+    /// Optionally enable autonat
+    /// ⚠️ Do not enable for WebRTC-Broswer facing connections, as autonat may break WebRTC Transport in browsers
+    pub fn with_autonat(mut self) -> Self {
+        self.autonat = Some(autonat::Behaviour::new(
+            PeerId::from(self.id_keys.public()),
+            Default::default(),
+        ));
+        self
+    }
+
+    /// Optionally active and set the kademlia protocol name
+    /// Protocol name example: `/universal-connectivity/lan/kad/1.0.0`
+    pub fn with_kademlia(&mut self, protocol_name: Option<&[u8]>) -> &Self {
+        // Create a Kademlia behaviour.
+        let mut cfg = KademliaConfig::default();
+        if let Some(proto) = protocol_name {
+            cfg.set_protocol_names(vec![Cow::Owned(proto.to_vec())]);
+        }
+        let store = MemoryStore::new(PeerId::from(self.id_keys.public()));
+        let mut kademlia = Kademlia::with_config(PeerId::from(self.id_keys.public()), store, cfg);
+
+        // Maybe use IPFS_BOOTNODES if kad::protocol::DEFAULT_PROTO_NAME is in the iter of protocol_names
+        // ie) if default or if KADEMLIA_PROTOCOL_NAME matches kad::protocol::DEFAULT_PROTO_NAME
+        if kademlia
+            .protocol_names()
+            .iter()
+            .any(|p| *p == kad::protocol::DEFAULT_PROTO_NAME)
+        {
+            let bootaddr = Multiaddr::from_str("/dnsaddr/bootstrap.libp2p.io").unwrap();
+            for peer in &IPFS_BOOTNODES {
+                kademlia.add_address(&PeerId::from_str(peer).unwrap(), bootaddr.clone());
+            }
+            kademlia.bootstrap().unwrap();
+        }
+
+        self.kademlia = Some(kademlia);
+        self
+    }
+
+    /// Builds the [Behaviour]
+    pub fn build(self) -> Behaviour {
+        let local_peer_id = PeerId::from(&self.id_keys.public());
+        debug!("Local peer id: {local_peer_id}");
 
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &gossipsub::Message| {
@@ -45,121 +113,94 @@ impl Behaviour {
 
         // Set a custom gossipsub configuration
         let gossipsub_config = gossipsub::ConfigBuilder::default()
-            // .mesh_n_low(2) // experiment to see if this matters for WebRTC
-            // .support_floodsub()
-            .check_explicit_peers_ticks(1)
-            .heartbeat_initial_delay(Duration::from_secs(30))
-            .heartbeat_interval(Duration::from_secs(60)) // This is set to aid debugging by not cluttering the log space
             .validation_mode(gossipsub::ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
             .message_id_fn(message_id_fn) // content-address messages. No two messages of the same content will be propagated.
+            .mesh_outbound_min(1)
+            .mesh_n_low(1)
+            .support_floodsub()
+            .flood_publish(true)
             .build()
             .expect("Valid config");
 
-        let kademlia = if enable_kademlia {
-            let mut kademlia_config = KademliaConfig::default();
-            // Instantly remove records and provider records.
-            //
-            // TODO: Replace hack with option to disable both.
-            kademlia_config.set_record_ttl(Some(Duration::from_secs(0)));
-            kademlia_config.set_provider_record_ttl(Some(Duration::from_secs(0)));
-            kademlia_config.set_query_timeout(Duration::from_secs(5 * 60));
-            let mut kademlia = Kademlia::with_config(
-                pub_key.to_peer_id(),
-                MemoryStore::new(pub_key.to_peer_id()),
-                kademlia_config,
-            );
-            let bootaddr = Multiaddr::from_str("/dnsaddr/bootstrap.libp2p.io").unwrap();
-            for peer in &BOOTNODES {
-                kademlia.add_address(&PeerId::from_str(peer).unwrap(), bootaddr.clone());
-            }
-            kademlia.bootstrap().unwrap();
-            kademlia.get_closest_peers(
-                PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN").unwrap(),
-            );
+        // build a gossipsub network behaviour
+        let mut gossipsub = gossipsub::Behaviour::new(
+            gossipsub::MessageAuthenticity::Signed(self.id_keys.clone()),
+            gossipsub_config,
+        )
+        .expect("Correct configuration");
 
-            Some(kademlia)
-        } else {
-            None
-        }
-        .into();
+        // subscribes to our topic
+        gossipsub.subscribe(&topic()).expect("Valid topic string");
 
-        let autonat = if enable_autonat {
-            Some(autonat::Behaviour::new(
-                PeerId::from(pub_key.clone()),
-                Default::default(),
-            ))
-        } else {
-            None
-        }
-        .into();
+        let identify = identify::Behaviour::new(
+            identify::Config::new("/ipfs/0.1.0".into(), self.id_keys.public())
+                .with_interval(Duration::from_secs(60)) // do this so we can get timeouts for dropped WebRTC connections
+                .with_agent_version(format!("rust-libp2p-server/{}", env!("CARGO_PKG_VERSION"))),
+        );
 
-        Self {
-            autonat,
-            kademlia,
-            keep_alive: keep_alive::Behaviour,
-            relay: relay::Behaviour::new(PeerId::from(pub_key.clone()), Default::default()),
-            ping: ping::Behaviour::new(ping::Config::new()),
-            gossipsub: gossipsub::Behaviour::new(
-                gossipsub::MessageAuthenticity::Signed(id_keys),
-                gossipsub_config,
-            )
-            .expect("Valid configuration"),
-            identify: identify::Behaviour::new(
-                identify::Config::new("ipfs/0.1.0".to_string(), pub_key).with_agent_version(
-                    format!("rust-libp2p-server/{}", env!("CARGO_PKG_VERSION")),
-                ),
+        Behaviour {
+            gossipsub,
+            identify,
+            autonat: self.autonat.into(),
+            kademlia: self.kademlia.into(),
+            keep_alive: keep_alive::Behaviour::default(),
+            relay: relay::Behaviour::new(
+                local_peer_id,
+                relay::Config {
+                    max_reservations: usize::MAX,
+                    max_reservations_per_peer: 100,
+                    reservation_rate_limiters: Vec::default(),
+                    circuit_src_rate_limiters: Vec::default(),
+                    max_circuits: usize::MAX,
+                    max_circuits_per_peer: 100,
+                    ..Default::default()
+                },
             ),
         }
     }
 }
 
 #[derive(Debug)]
-pub enum Event {
+pub enum ComposedEvent {
     Gossipsub(gossipsub::Event),
-    Ping(ping::Event),
-    Identify(Box<identify::Event>),
-    Relay(relay::Event),
-    Kademlia(KademliaEvent),
+    Identify(identify::Event),
     Autonat(autonat::Event),
+    Kademlia(KademliaEvent),
+    Relay(relay::Event),
 }
 
-impl From<gossipsub::Event> for Event {
+impl From<gossipsub::Event> for ComposedEvent {
     fn from(event: gossipsub::Event) -> Self {
-        Event::Gossipsub(event)
+        ComposedEvent::Gossipsub(event)
     }
 }
 
-impl From<ping::Event> for Event {
-    fn from(event: ping::Event) -> Self {
-        Event::Ping(event)
-    }
-}
-
-impl From<identify::Event> for Event {
+impl From<identify::Event> for ComposedEvent {
     fn from(event: identify::Event) -> Self {
-        Event::Identify(Box::new(event))
+        ComposedEvent::Identify(event)
     }
 }
 
-impl From<relay::Event> for Event {
-    fn from(event: relay::Event) -> Self {
-        Event::Relay(event)
-    }
-}
-
-impl From<KademliaEvent> for Event {
-    fn from(event: KademliaEvent) -> Self {
-        Event::Kademlia(event)
-    }
-}
-
-impl From<autonat::Event> for Event {
+impl From<autonat::Event> for ComposedEvent {
     fn from(event: autonat::Event) -> Self {
-        Event::Autonat(event)
+        ComposedEvent::Autonat(event)
     }
 }
 
-impl From<Void> for Event {
+impl From<KademliaEvent> for ComposedEvent {
+    fn from(event: KademliaEvent) -> Self {
+        ComposedEvent::Kademlia(event)
+    }
+}
+
+impl From<relay::Event> for ComposedEvent {
+    fn from(event: relay::Event) -> Self {
+        ComposedEvent::Relay(event)
+    }
+}
+
+// void too
+impl From<Void> for ComposedEvent {
     fn from(event: Void) -> Self {
         void::unreachable(event)
     }
