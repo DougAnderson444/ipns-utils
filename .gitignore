@@ -1,4 +1,4 @@
 /target
 /Cargo.lock
-local_key
+local_keypair
 cert.pem
