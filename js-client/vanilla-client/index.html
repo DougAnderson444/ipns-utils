@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Vite + TS</title>
+    </head>
+    <body>
+        <div id="app"></div>
+        <!-- label and input -->
+        <div class="flex flex-col p-2 w-full h-screen text-neutral-800">
+            <h1>Vanilla JS Client</h1>
+
+            <!-- Show my peer id -->
+            <div class="border rounded-lg p-2 my-1 bg-neutral-100">
+                My peerid: <span id="my-peerid"></span>
+            </div>
+
+            <div class="flex w-full select-none">
+                <label for="name">WebRTC Multiaddr:</label>
+                <input
+                    type="text"
+                    id="multiaddr"
+                    placeholder="/ip6/2607:fea8:fec0:7337:c801:d716:2390:f790/udp/9090/webrtc-direct/certhash/uEiCGy2PnRK-KmkckQRvSlyoZtptV3jF2tMOCX2NhXsfTig/p2p/12D3KooWQDZeK4DUxiksnvvDuhSx6csd7XzVT1GGWw7fPKyp9nBJ"
+                    value="/ip6/2607:fea8:fec0:7337:c801:d716:2390:f790/udp/9090/webrtc-direct/certhash/uEiCGy2PnRK-KmkckQRvSlyoZtptV3jF2tMOCX2NhXsfTig/p2p/12D3KooWQDZeK4DUxiksnvvDuhSx6csd7XzVT1GGWw7fPKyp9nBJ"
+                    class="border border-neutral-400 w-full p-2 m-2 rounded select-auto"
+                />
+                <!-- button -->
+                <button
+                    id="connect"
+                    class="p-2 m-2 rounded bg-green-500 text-white shadow-lg hover:bg-green-700"
+                >
+                    Connect
+                </button>
+            </div>
+
+            <!-- Connected to #peers -->
+            <div id="multiaddrs" class="flex flex-col w-full select-none"></div>
+
+            <!-- Circuit relay, with copy-to-clipboard button -->
+            <div class="flex w-full select-none">
+                <label for="name"
+                    >C<span class="italic">ircuit Relay</span> Multiaddr:</label
+                >
+                <!-- wrap long text around in a new line -->
+                <input
+                    type="text"
+                    id="circuit"
+                    class="border border-neutral-400 w-full p-2 m-2 rounded select-auto break-all"
+                />
+                <!-- button -->
+                <button
+                    id="copy"
+                    class="p-2 m-2 rounded bg-blue-500 text-white shadow-lg hover:bg-blue-700"
+                >
+                    Copy
+                </button>
+            </div>
+
+            <!-- Chat element, with chat inner div always scrolled to the bottom -->
+            <div
+                id="messages"
+                class="flex flex-col bg-neutral-100 w-full h-full border rounded overflow-y-scroll"
+            >
+                <div id="anchor"></div>
+            </div>
+            <!-- Chat input -->
+            <div class="flex w-full select-none">
+                <input
+                    type="text"
+                    id="message"
+                    placeholder="Type a message"
+                    class="border border-neutral-400 w-full p-2 m-2 rounded select-auto"
+                />
+                <!-- button -->
+                <button
+                    id="publish"
+                    class="p-2 m-2 rounded bg-green-500 text-white shadow-lg hover:bg-green-700"
+                >
+                    Send
+                </button>
+
+                <!-- button -->
+                <button
+                    id="clear"
+                    class="p-2 m-2 rounded bg-blue-500 text-white shadow-lg hover:bg-blue-700"
+                >
+                    Clear
+                </button>
+            </div>
+        </div>
+        <!-- script -->
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>

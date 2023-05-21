@@ -1,0 +1,8 @@
+#messages * {
+    overflow-anchor: none;
+}
+
+#anchor {
+    overflow-anchor: auto;
+    height: 2px;
+}
