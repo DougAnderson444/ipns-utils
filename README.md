@@ -32,6 +32,10 @@ cargo run --example ipns-entry
 
 `cargo test --workspace`
 
+# Docs
+
+`cargo doc --workspace --no-deps --open`
+
 # Build from Source
 
 To build, you will need your env var `PROTOC=` set to the bin location where protoc is saved,
