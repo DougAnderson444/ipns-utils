@@ -4,7 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [".", "ipns-entry", "ipns-interop-test", "ipns-server"]
+members = [
+    ".",
+    "ipns-entry",
+    "ipns-interop-test",
+    "ipns-server",
+    "ipns-plugin-bindings",
+    "ipns-plugin-interface",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -36,3 +43,15 @@ ipns-entry = { workspace = true } # So it's available in ./examples/
 
 [patch.crates-io]
 libp2p = { git = "https://github.com/p-shahi/rust-libp2p.git", branch = "master-plus-webrtc-code" }
+
+[profile.release]
+opt-level = "z"          # Optimize for size.
+lto = true               # Enable Link Time Optimization
+codegen-units = 1        # allow for maximum size reduction optimizations
+strip = true             # Automatically strip symbols from the binary.
+panic = 'abort'          # Abort on panic
+debug = false
+debug-assertions = false
+overflow-checks = false
+incremental = false
+rpath = false
