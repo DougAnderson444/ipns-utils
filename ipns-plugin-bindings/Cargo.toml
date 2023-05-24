@@ -1,0 +1,12 @@
+[package]
+name = "ipns-plugin-bindings"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+extism-pdk = { git = "https://github.com/extism/rust-pdk.git", version = "0.3.2" }
+ipns-plugin-interface = { version = "0.1.0", path = "../ipns-plugin-interface" }
+ipns-entry = { version = "0.1.0", path = "../ipns-entry" }
