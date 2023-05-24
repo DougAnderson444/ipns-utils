@@ -9,6 +9,7 @@ members = [
     "ipns-entry",
     "ipns-interop-test",
     "ipns-server",
+    "ipns-plugin",
     "ipns-plugin-bindings",
     "ipns-plugin-interface",
 ]

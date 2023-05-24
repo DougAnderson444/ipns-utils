@@ -1,11 +1,19 @@
 use extism_pdk::*;
-use ipns_plugin_interface::Output;
+use ipns_entry::DataBuilder;
+use ipns_plugin_interface::{Output, SignableData};
 
 const VOWELS: &[char] = &['a', 'A', 'e', 'E', 'i', 'I', 'o', 'O', 'u', 'U'];
 
 #[host_fn]
 extern "ExtismHost" {
     fn hello_world(count: Json<Output>) -> Json<Output>;
+}
+
+#[plugin_fn]
+pub fn generate_signables(input: String) -> FnResult<Json<SignableData>> {
+    let (data, signables) = DataBuilder::new(input.as_str()).build();
+
+    Ok(Json(SignableData { data, signables }))
 }
 
 #[plugin_fn]

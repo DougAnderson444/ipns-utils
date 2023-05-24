@@ -1,11 +1,13 @@
 //! Re-export of `libp2p_identity::Keypair`
 use libp2p_identity::*;
+use serde_derive::{Deserialize, Serialize};
 
 /// Generate a new ed25519 keypair for signing cbor data.
 pub fn generate() -> Keypair {
     Keypair::generate_ed25519()
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Debug, Hash)]
 pub struct Signables {
     pub v1: Vec<u8>,
     pub v2: Vec<u8>,
