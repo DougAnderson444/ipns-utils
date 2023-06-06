@@ -1,5 +1,4 @@
 //! Re-export of `libp2p_identity::Keypair`
-use libp2p_identity::*;
 pub use libp2p_identity::{ed25519, Keypair, PublicKey, SigningError};
 use serde_derive::{Deserialize, Serialize};
 
