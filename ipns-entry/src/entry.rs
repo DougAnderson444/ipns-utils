@@ -9,7 +9,7 @@ use crate::cbor;
 use crate::signer::{Signables, Signed};
 use anyhow::{anyhow, Error, Result};
 use cbor::Data;
-use libp2p_identity::{ed25519, PeerId, PublicKey};
+pub use libp2p_identity::{ed25519, PeerId, PublicKey};
 use multihash::Multihash;
 use prost::Message; // so we can use trait Message
 pub use protobuf::ipns_entry::ValidityType;
